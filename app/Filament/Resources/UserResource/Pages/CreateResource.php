@@ -1,0 +1,19 @@
+<?php
+// File: app/Filament/Resources/UserResource/Pages/CreateUser.php
+
+namespace App\Filament\Resources\UserResource\Pages;
+
+use App\Filament\Resources\UserResource;
+use Filament\Actions;
+use Filament\Resources\Pages\CreateRecord;
+
+class CreateUser extends CreateRecord
+{
+    protected static string $resource = UserResource::class;
+
+    // Arahkan kembali ke halaman ListUsers setelah berhasil dibuat
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
+}
