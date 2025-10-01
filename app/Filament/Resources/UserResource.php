@@ -1,143 +1,162 @@
 <?php
-// File: app/Filament/Resources/UserResource.php
 
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
+use App\Mail\AccountActivatedMail;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
 
 class UserResource extends Resource
 {
-    // Menggunakan model User untuk mengelola data
     protected static ?string $model = User::class;
-
-    // Mengatur ikon navigasi di sidebar
     protected static ?string $navigationIcon = 'heroicon-o-users';
-
-    // Mengatur label navigasi yang akan muncul di sidebar
     protected static ?string $navigationLabel = 'Pengelolaan Pengguna';
-
-    // Mengatur urutan navigasi di sidebar
     protected static ?int $navigationSort = 1;
 
-    /**
-     * Memodifikasi query untuk menyembunyikan pengguna dengan role 'admin'.
-     */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('role', '!=', 'admin');
+        return parent::getEloquentQuery()->whereRaw('LOWER(role) != ?', ['admin']);
     }
 
-    /**
-     * Mendefinisikan form untuk membuat dan mengedit pengguna.
-     */
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Informasi Akun')
-                    ->description('Isi data untuk membuat akun pengguna baru.')
+                Forms\Components\Section::make('Detail Pengguna')
                     ->schema([
-                        // Kolom untuk Nama Lengkap
                         Forms\Components\TextInput::make('name')
                             ->label('Nama Lengkap')
-                            ->required()
-                            ->maxLength(255),
-                        
-                        // Kolom untuk Email
+                            ->required()->maxLength(255),
                         Forms\Components\TextInput::make('email')
                             ->label('Email')
-                            ->email()
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->maxLength(255),
+                            ->email()->required()->unique(ignoreRecord: true)->maxLength(255),
                         
-                        // Kolom dropdown untuk memilih Role dengan label yang baru
-                        Forms\Components\Select::make('role')
-                            ->label('Role')
+                        Forms\Components\Select::make('department_id')->label('Departemen')
+                            ->relationship('department', 'name')
+                            ->searchable()->preload()->required(),
+                        Forms\Components\Select::make('position_id')->label('Jabatan')
+                            ->relationship('position', 'name')
+                            ->searchable()->preload()->required(),
+                        Forms\Components\Select::make('office_id')->label('Kantor Penempatan')
+                            ->relationship('office', 'name')
+                            ->searchable()->preload()->required(),
+
+                        Forms\Components\Select::make('role')->label('Role')
                             ->options([
                                 'employee' => 'Karyawan',
                                 'intern' => 'Magang/Pkl',
                             ])
-                            ->required()
-                            ->default('employee'),
-
-                        // Kolom untuk Password. Hanya wajib saat membuat pengguna baru
-                        Forms\Components\TextInput::make('password')
-                            ->label('Password')
-                            ->password()
-                            ->required(fn (string $context): bool => $context === 'create')
-                            ->rule(Password::min(8)->mixedCase()->numbers())
-                            ->dehydrated(fn ($state) => filled($state))
-                            ->dehydrateStateUsing(fn ($state) => Hash::make($state)),
+                            ->required(),
                         
-                        // Kolom untuk Konfirmasi Password
-                        Forms\Components\TextInput::make('password_confirmation')
-                            ->label('Konfirmasi Password')
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Akun Aktif')
+                            ->helperText('Matikan toggle ini untuk menonaktifkan akun pengguna.')
+                            ->onColor('success')
+                            ->offColor('danger')
+                            ->visible(fn (User $record = null): bool => $record && $record->is_active),
+
+                        Forms\Components\TextInput::make('password')->label('Password Baru (Opsional)')
                             ->password()
-                            ->same('password')
-                            ->required(fn (string $context): bool => $context === 'create')
-                            ->dehydrated(false),
+                            ->rule(Password::min(8))->dehydrated(fn ($state) => filled($state))
+                            ->dehydrateStateUsing(fn ($state) => Hash::make($state)),
                     ])
             ]);
     }
 
-    /**
-     * Mendefinisikan tabel untuk menampilkan daftar pengguna.
-     */
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                // Kolom Nama Lengkap
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Nama Lengkap')
-                    ->searchable()
-                    ->sortable(),
-                
-                // Kolom Email
-                Tables\Columns\TextColumn::make('email')
-                    ->label('Email')
-                    ->searchable()
-                    ->sortable(),
-                
-                // Kolom Role yang ditampilkan sebagai Badge
-                Tables\Columns\TextColumn::make('role')
-                    ->label('Role')
+                Tables\Columns\TextColumn::make('name')->label('Nama Lengkap')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('email')->searchable(),
+                Tables\Columns\TextColumn::make('department.name')->label('Departemen')->placeholder('N/A')->sortable(),
+                Tables\Columns\TextColumn::make('position.name')->label('Jabatan')->placeholder('N/A')->sortable(),
+                Tables\Columns\TextColumn::make('office.name')->label('Kantor')->placeholder('Belum Ditetapkan')->sortable(),
+                Tables\Columns\TextColumn::make('role')->label('Role')
                     ->badge()
-                    ->colors([
-                        'success' => 'employee',
-                        'info' => 'intern',
-                        'danger' => 'admin',
-                    ])
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'employee' => 'Karyawan',
-                        'intern' => 'Magang/Pkl',
-                        'admin' => 'Admin',
-                        'user' => 'User',
-                        default => $state,
+                    ->placeholder('N/A')
+                    ->color(fn (User $record): string => match((int) $record->is_active) {
+                        1 => $record->role === 'employee' ? 'success' : 'info',
+                        0 => 'warning',
+                        default => 'gray',
+                    })
+                    ->formatStateUsing(function ($state, User $record): string {
+                        $roleText = match ($state) {
+                            'employee' => 'Karyawan',
+                            'intern' => 'Magang',
+                            default => 'Tidak Diketahui',
+                        };
+                        return $record->is_active ? $roleText : $roleText . ' (Menunggu Persetujuan)';
                     }),
+                Tables\Columns\IconColumn::make('is_active')->label('Status Akun')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-check-badge')
+                    ->falseIcon('heroicon-o-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('danger'),
             ])
             ->filters([
-                // Filter untuk menyortir berdasarkan Role
-                Tables\Filters\SelectFilter::make('role')
-                    ->label('Filter Berdasarkan Role')
-                    ->options([
-                        'employee' => 'Karyawan',
-                        'intern' => 'Magang/Pkl',
-                    ]),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Status Akun')
+                    ->trueLabel('Aktif')
+                    ->falseLabel('Tidak Aktif'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                
+                // === FUNGSI AKTIFKAN & NON-AKTIFKAN DIGABUNGKAN ===
+                Action::make('toggleStatus')
+                    ->label(fn (User $record): string => $record->is_active ? 'Non-aktifkan' : 'Aktifkan')
+                    ->icon(fn (User $record): string => $record->is_active ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
+                    ->color(fn (User $record): string => $record->is_active ? 'danger' : 'success')
+                    ->requiresConfirmation()
+                    ->action(function (User $record) {
+                        // Jika akun aktif, maka non-aktifkan
+                        if ($record->is_active) {
+                            $record->is_active = false;
+                            $record->save();
+
+                            Notification::make()
+                                ->success()
+                                ->title('Berhasil Dinonaktifkan')
+                                ->body('Akun pengguna telah berhasil dinonaktifkan.')
+                                ->send();
+                        } else {
+                            // Jika akun tidak aktif, maka aktifkan dan kirim email
+                            $record->is_active = true;
+                            $record->save();
+
+                            try {
+                                Mail::to($record->email)->send(new AccountActivatedMail($record));
+                                Notification::make()
+                                    ->success()
+                                    ->title('Aktivasi Berhasil')
+                                    ->body('Akun pengguna telah diaktifkan dan notifikasi terkirim.')
+                                    ->send();
+                            } catch (\Exception $e) {
+                                Log::error('Gagal kirim email aktivasi dari Filament: ' . $e->getMessage());
+                                Notification::make()
+                                    ->danger()
+                                    ->title('Email Gagal Terkirim')
+                                    ->body('Aktivasi berhasil, namun email notifikasi gagal dikirim.')
+                                    ->send();
+                            }
+                        }
+                    }),
+                // === AKHIR FUNGSI GABUNGAN ===
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -145,10 +164,7 @@ class UserResource extends Resource
                 ]),
             ]);
     }
-
-    /**
-     * Mendefinisikan halaman-halaman yang terkait dengan resource ini.
-     */
+    
     public static function getPages(): array
     {
         return [
@@ -158,3 +174,4 @@ class UserResource extends Resource
         ];
     }
 }
+

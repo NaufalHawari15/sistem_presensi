@@ -14,30 +14,24 @@ class OfficeResource extends Resource
 {
     protected static ?string $model = Office::class;
 
-    // Mengatur ikon dan nama di navigasi sidebar
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
     protected static ?string $navigationLabel = 'Pengelolaan Kantor';
-    protected static ?int $navigationSort = 1; // Urutan di sidebar
+    protected static ?int $navigationSort = 2; // Urutan di sidebar
 
-    /**
-     * Mendefinisikan form untuk membuat dan mengedit data.
-     */
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                // Input untuk nama kantor
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255)
                     ->label('Nama Kantor'),
 
-                // Input untuk alamat
                 Forms\Components\Textarea::make('address')
                     ->required()
-                    ->label('Alamat Lengkap'),
+                    ->label('Alamat Lengkap')
+                    ->columnSpanFull(),
 
-                // Grup untuk latitude dan longitude agar sejajar
                 Forms\Components\Grid::make(2)
                     ->schema([
                         Forms\Components\TextInput::make('latitude')
@@ -50,60 +44,63 @@ class OfficeResource extends Resource
                             ->label('Garis Bujur (Longitude)'),
                     ]),
                 
-                // Input untuk radius
                 Forms\Components\TextInput::make('radius')
                     ->required()
                     ->numeric()
                     ->default(50)
-                    ->suffix('meter') // Tambahan teks 'meter' di belakang input
+                    ->suffix('meter')
                     ->label('Radius Toleransi'),
+
+                // --- PENAMBAHAN FITUR DIMULAI ---
+                Forms\Components\Select::make('work_schedule_id')
+                    ->label('Pilih Jam Kerja')
+                    ->relationship('workSchedule', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->required()
+                    ->placeholder('Pilih jadwal kerja untuk kantor ini'),
+                // --- PENAMBAHAN FITUR SELESAI ---
             ]);
     }
 
-    /**
-     * Mendefinisikan tabel untuk menampilkan data.
-     */
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                // Kolom untuk menampilkan nama kantor
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nama Kantor')
-                    ->searchable() // Membuat kolom ini bisa dicari
-                    ->sortable(), // Membuat kolom ini bisa diurutkan
+                    ->searchable()
+                    ->sortable(),
+                
+                // --- PENAMBAHAN KOLOM BARU ---
+                Tables\Columns\TextColumn::make('workSchedule.name')
+                    ->label('Jam Kerja')
+                    ->badge()
+                    ->sortable()
+                    ->placeholder('Belum diatur'),
 
-                // Kolom untuk menampilkan alamat
                 Tables\Columns\TextColumn::make('address')
                     ->label('Alamat')
-                    ->limit(50) // Batasi teks yang ditampilkan agar tidak terlalu panjang
+                    ->limit(40)
                     ->searchable(),
 
-                // Kolom untuk menampilkan radius
                 Tables\Columns\TextColumn::make('radius')
                     ->label('Radius')
-                    ->suffix(' m') // Tambahkan ' m' di belakang angka
+                    ->suffix(' m')
                     ->sortable(),
             ])
             ->filters([
-                // Tempat untuk menambahkan filter jika dibutuhkan nanti
+                //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(), // Tombol untuk mengedit
-                Tables\Actions\DeleteAction::make(), // Tombol untuk menghapus
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            // Tempat untuk relasi jika ada
-        ];
     }
 
     public static function getPages(): array

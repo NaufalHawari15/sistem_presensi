@@ -4,6 +4,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -11,28 +12,24 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    /**
-     * Menggunakan trait yang diperlukan untuk otentikasi, API, dan fitur bawaan Laravel.
-     */
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
-     * Atribut yang dapat diisi secara massal (mass assignable).
-     * Disesuaikan agar sinkron dengan UserResource.
-     *
-     * @var array<int, string>
+     * Atribut yang dapat diisi secara massal.
      */
     protected $fillable = [
         'name',
         'email',
         'password',
-        'role', // Role sangat penting untuk membedakan pengguna (employee/intern)
+        'role',
+        'office_id',
+        'is_active',
+        'department_id',
+        'position_id',
     ];
 
     /**
-     * Atribut yang harus disembunyikan saat serialisasi (misalnya, saat dikirim sebagai JSON).
-     *
-     * @var array<int, string>
+     * Atribut yang harus disembunyikan.
      */
     protected $hidden = [
         'password',
@@ -40,21 +37,19 @@ class User extends Authenticatable
     ];
 
     /**
-     * Atribut yang tipe datanya harus di-cast secara otomatis.
-     *
-     * @return array<string, string>
+     * Atribut yang tipe datanya harus di-cast.
      */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed', // Selalu pastikan password di-hash
+            'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
     /**
-     * Relasi one-to-many ke data Absensi.
-     * Seorang pengguna bisa memiliki banyak catatan absensi.
+     * Relasi ke Attendances.
      */
     public function attendances(): HasMany
     {
@@ -62,11 +57,35 @@ class User extends Authenticatable
     }
 
     /**
-     * Relasi one-to-many ke data Izin/Cuti.
-     * Seorang pengguna bisa memiliki banyak catatan pengajuan izin.
+     * Relasi ke Leaves.
      */
     public function leaves(): HasMany
     {
         return $this->hasMany(Leave::class);
     }
+
+    /**
+     * Relasi ke Office.
+     */
+    public function office(): BelongsTo
+    {
+        return $this->belongsTo(Office::class);
+    }
+
+    /**
+     * Relasi ke Department.
+     */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * Relasi ke Position.
+     */
+    public function position(): BelongsTo
+    {
+        return $this->belongsTo(Position::class);
+    }
 }
+

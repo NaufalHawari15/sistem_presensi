@@ -10,6 +10,12 @@ class Attendance extends Model
 {
     use HasFactory;
 
+    /**
+     * The attributes that are mass assignable.
+     * Disesuaikan dengan file migrasi database.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
         'user_id',
         'office_id',
@@ -22,6 +28,16 @@ class Attendance extends Model
         'check_out_longitude',
         'check_out_photo',
         'status',
+    ];
+
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'check_in_time' => 'datetime', // Mengubah string timestamp menjadi objek Carbon
+        'check_out_time' => 'datetime',// Mengubah string timestamp menjadi objek Carbon
     ];
 
     /**

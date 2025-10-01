@@ -6,15 +6,13 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-   
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-
-            $table->boolean('is_active')->default(false)->after('password');
+            // Pastikan tidak ada ->after('office_id') di sini
+            $table->boolean('is_active')->default(false);
         });
     }
-
 
     public function down(): void
     {

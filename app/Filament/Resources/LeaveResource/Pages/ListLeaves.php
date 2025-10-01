@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\LeaveResource\Pages;
 
 use App\Filament\Resources\LeaveResource;
-use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Resources\Components\Tab; // <-- perbaikan namespace
 
 class ListLeaves extends ListRecords
 {
@@ -12,8 +12,19 @@ class ListLeaves extends ListRecords
 
     protected function getHeaderActions(): array
     {
+        return []; // Hilangkan tombol create
+    }
+
+    public function getTabs(): array
+    {
         return [
-            Actions\CreateAction::make(),
+            'all' => Tab::make('Semua'),
+            'izin' => Tab::make('Izin')
+                ->modifyQueryUsing(fn ($query) => $query->where('leave_type', 'Izin')),
+            'sakit' => Tab::make('Sakit')
+                ->modifyQueryUsing(fn ($query) => $query->where('leave_type', 'Sakit')),
+            'cuti' => Tab::make('Cuti / Lainnya')
+                ->modifyQueryUsing(fn ($query) => $query->where('leave_type', 'Lainnya')),
         ];
     }
 }
