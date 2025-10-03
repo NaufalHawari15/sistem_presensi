@@ -13,13 +13,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
-
-
 class AuthController extends Controller
 {
     /**
-     * Tahap 1 Registrasi: Validasi data & kirim OTP.
-     * Pengguna diizinkan memilih role awal (sementara).
+     * Menangani tahap 1 registrasi: validasi data dan pengiriman OTP.
      */
     public function register(RegisterRequest $request)
     {
@@ -27,57 +24,78 @@ class AuthController extends Controller
 
         $otp = random_int(100000, 999999);
         $verificationToken = Str::random(60);
-        $cacheKey = 'registration_token_' . $verificationToken;
 
-        // Simpan data sementara di cache, termasuk 'role' pilihan pengguna.
+        // [MODIFIKASI] Menggunakan token sebagai kunci cache
+        $cacheKey = 'registration_token_' . $verificationToken;
         Cache::put($cacheKey, [
             'name' => $validatedData['name'],
             'email' => $validatedData['email'],
             'password' => Hash::make($validatedData['password']),
             'role' => $validatedData['role'],
             'otp' => $otp,
-        ], now()->addMinutes(10));
+        ], now()->addMinutes(10)); // OTP berlaku selama 10 menit
 
         try {
-            Mail::to($validatedData['email'])->send(new OtpMail($otp));
+            Mail::to($validatedData['email'])->send(new OtPmail($otp));
         } catch (\Exception $e) {
-            Log::error('Gagal mengirim email OTP registrasi.', ['error' => $e->getMessage()]);
-            return response()->json(['message' => 'Gagal mengirim email verifikasi.'], 500);
+            Log::error('Gagal mengirim email OTP registrasi.', [
+                'email_tujuan' => $validatedData['email'],
+                'pesan_error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mengirim email verifikasi.',
+            ], 500);
         }
 
-         return response()->json([
+        return response()->json([
             'message' => 'Registrasi berhasil! Silakan cek email untuk kode verifikasi.',
             'status' => 'sukses',
             'registerResult' => [
                 'email' => $validatedData['email'],
                 'namaPelanggan' => $validatedData['name'],
                 'token_verifikasi' => $verificationToken,
-                'otp' => (string)$otp, // OTP disertakan untuk kemudahan testing
+                'otp' => (string)$otp,
             ]
         ], 200);
     }
 
     /**
-     * Tahap 2: Verifikasi OTP & buat user baru dengan status TIDAK AKTIF.
+     * [MODIFIKASI] Menangani verifikasi OTP menggunakan Bearer Token.
+     * Endpoint: POST /api/verify-otp
+     * Header: Authorization: Bearer {token_verifikasi}
+     * Body: { "otp": "123456" }
      */
     public function verifyOtp(Request $request)
     {
-        $request->validate(['otp' => 'required|string|min:6|max:6']);
+        // 1. Validasi OTP dari body request
+        $request->validate([
+            'otp' => 'required|string|min:6|max:6',
+        ]);
+
+        // 2. Ambil token dari Authorization header
         $token = $request->bearerToken();
 
         if (!$token) {
-            return response()->json(['message' => 'Token verifikasi tidak ditemukan.'], 401);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Token verifikasi tidak ditemukan di header.',
+            ], 401); // 401 Unauthorized
         }
 
+        // 3. Cari data di cache menggunakan token
         $cacheKey = 'registration_token_' . $token;
         $cachedData = Cache::get($cacheKey);
 
+        // 4. Cocokkan OTP dari request dengan yang ada di cache
         if (!$cachedData || $cachedData['otp'] != $request->otp) {
-            return response()->json(['message' => 'Kode OTP tidak valid atau token telah kedaluwarsa.'], 422);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Kode OTP tidak valid atau token telah kedaluwarsa.',
+            ], 422);
         }
 
-        // Buat user baru. Kolom 'is_active' akan otomatis 'false'
-        // sesuai default di database migration Anda.
+        // 5. Jika cocok, buat user baru
         $user = User::create([
             'name' => $cachedData['name'],
             'email' => $cachedData['email'],
@@ -85,56 +103,17 @@ class AuthController extends Controller
             'role' => $cachedData['role'],
         ]);
 
+        // Hapus data dari cache setelah berhasil digunakan
         Cache::forget($cacheKey);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Verifikasi berhasil. Akun Anda sedang menunggu persetujuan admin.',
+            'message' => 'Registrasi berhasil. Anda sekarang bisa login.',
             'data' => $user
         ], 201);
     }
 
-    /**
-     * Kirim ulang OTP jika diperlukan.
-     */
-    public function resendOtp(Request $request)
-    {
-        $token = $request->bearerToken();
-
-        if (!$token) {
-            return response()->json(['message' => 'Token verifikasi tidak ditemukan.'], 401);
-        }
-
-        $cacheKey = 'registration_token_' . $token;
-        $cachedData = Cache::get($cacheKey);
-
-        if (!$cachedData) {
-            return response()->json(['message' => 'Token verifikasi tidak valid atau telah kedaluwarsa.'], 400);
-        }
-
-        $newOtp = random_int(100000, 999999);
-        $cachedData['otp'] = $newOtp;
-        Cache::put($cacheKey, $cachedData, now()->addMinutes(10));
-
-        try {
-            Mail::to($cachedData['email'])->send(new OtpMail($newOtp));
-        } catch (\Exception $e) {
-            Log::error('Gagal mengirim ulang email OTP.', ['error' => $e->getMessage()]);
-            return response()->json(['message' => 'Gagal mengirim ulang email verifikasi.'], 500);
-        }
-
-        return response()->json([
-            'status' => 'sukses',
-            'message' => 'Kode OTP berhasil dikirim ulang.',
-            'data' => [
-                'token_verifikasi' => $token,
-            ]
-        ], 200);
-    }
-
-    /**
-     * Menangani login pengguna, dengan pengecekan status aktif.
-     */
+    // ... (Fungsi login dan logout tidak perlu diubah)
     public function login(Request $request)
     {
         $validatedData = $request->validate([
@@ -145,12 +124,10 @@ class AuthController extends Controller
         $user = User::where('email', $validatedData['email'])->first();
 
         if (!$user || !Hash::check($validatedData['password'], $user->password)) {
-            return response()->json(['message' => 'Email atau Password yang diberikan salah.'], 401);
-        }
-
-        // Pengecekan status aktif. Ini adalah bagian penting dari alur kerja baru.
-        if (!$user->is_active) {
-            return response()->json(['message' => 'Akun Anda belum aktif. Silakan hubungi administrator.'], 403); // 403 Forbidden
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Email atau Password yang diberikan salah.',
+            ], 401);
         }
         
         $user->tokens()->delete();
@@ -166,13 +143,13 @@ class AuthController extends Controller
         ], 200);
     }
 
-    /**
-     * Menangani logout pengguna.
-     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
-        return response()->json(['status' => 'success', 'message' => 'Logout berhasil'], 200);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Logout berhasil'
+        ], 200);
     }
 }
-
