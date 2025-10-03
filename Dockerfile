@@ -34,5 +34,11 @@ RUN chmod -R 775 storage bootstrap/cache
 # Expose port Railway
 EXPOSE 8080
 
+# Update Apache listen ke $PORT
+RUN sed -i "s/Listen 80/Listen ${PORT}/" /etc/apache2/ports.conf \
+    && sed -i "s/:80/:${PORT}/" /etc/apache2/sites-available/000-default.conf
+
+EXPOSE ${PORT}
+
 # Start Apache
 CMD ["apache2-foreground"]
